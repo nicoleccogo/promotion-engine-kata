@@ -4,16 +4,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { PromotionEngine } from './PromotionEngine';
 import { StubPromotion } from '../promotions/StubPromotion';
-import {
-  Cart,
-  LineItem,
-  Product,
-  Sku,
-  Quantity,
-  Money,
-  PromotionId,
-} from '../domain';
+import { Cart, LineItem, Product, Sku, Quantity, Money, PromotionId, Percentage } from '../domain';
 import { PricingContext, AppliedDiscount } from '../pricing';
+import { PercentOffPromotion } from '../promotions/PercentOffPromotion';
 
 describe('Promotion Engine Acceptance Tests', () => {
   let context: PricingContext;
@@ -52,9 +45,7 @@ describe('Promotion Engine Acceptance Tests', () => {
   });
 
   it('should apply a single applicable promotion to a cart', () => {
-    const cart = new Cart([
-      new LineItem(productA, new Quantity(2), Money.euros('10.00')),
-    ]);
+    const cart = new Cart([new LineItem(productA, new Quantity(2), Money.euros('10.00'))]);
 
     const discount = new AppliedDiscount(
       new PromotionId('PROMO-10-OFF-A'),
@@ -64,11 +55,7 @@ describe('Promotion Engine Acceptance Tests', () => {
       new Map([[new Sku('SKU-A'), Money.euros('2.00')]])
     );
 
-    const promotion = new StubPromotion(
-      new PromotionId('PROMO-10-OFF-A'),
-      true,
-      [discount]
-    );
+    const promotion = new StubPromotion(new PromotionId('PROMO-10-OFF-A'), true, [discount]);
 
     const engine = new PromotionEngine([promotion]);
     const summary = engine.price(cart, context);
@@ -80,9 +67,7 @@ describe('Promotion Engine Acceptance Tests', () => {
     expect(summary.appliedDiscounts).toHaveLength(1);
 
     const appliedDiscount = summary.appliedDiscounts[0];
-    expect(appliedDiscount.promotionId.equals(new PromotionId('PROMO-10-OFF-A'))).toBe(
-      true
-    );
+    expect(appliedDiscount.promotionId.equals(new PromotionId('PROMO-10-OFF-A'))).toBe(true);
     expect(appliedDiscount.amount.amount.toFixed(2)).toBe('2.00');
     expect(appliedDiscount.target).toBe('line');
   });
@@ -106,11 +91,9 @@ describe('Promotion Engine Acceptance Tests', () => {
       ])
     );
 
-    const promotion = new StubPromotion(
-      new PromotionId('PROMO-15-OFF-ELECTRONICS'),
-      true,
-      [discount]
-    );
+    const promotion = new StubPromotion(new PromotionId('PROMO-15-OFF-ELECTRONICS'), true, [
+      discount,
+    ]);
 
     const engine = new PromotionEngine([promotion]);
     const summary = engine.price(cart, context);
@@ -141,9 +124,7 @@ describe('Promotion Engine Acceptance Tests', () => {
   });
 
   it('should verify that applied discounts contain promotion ID and readable details', () => {
-    const cart = new Cart([
-      new LineItem(productA, new Quantity(1), Money.euros('50.00')),
-    ]);
+    const cart = new Cart([new LineItem(productA, new Quantity(1), Money.euros('50.00'))]);
 
     const discount = new AppliedDiscount(
       new PromotionId('SUMMER-SALE-2025'),
@@ -153,11 +134,7 @@ describe('Promotion Engine Acceptance Tests', () => {
       new Map([[new Sku('SKU-A'), Money.euros('10.00')]])
     );
 
-    const promotion = new StubPromotion(
-      new PromotionId('SUMMER-SALE-2025'),
-      true,
-      [discount]
-    );
+    const promotion = new StubPromotion(new PromotionId('SUMMER-SALE-2025'), true, [discount]);
 
     const engine = new PromotionEngine([promotion]);
     const summary = engine.price(cart, context);
@@ -166,9 +143,7 @@ describe('Promotion Engine Acceptance Tests', () => {
     const appliedDiscount = summary.appliedDiscounts[0];
 
     // Verify explainability
-    expect(appliedDiscount.promotionId.equals(new PromotionId('SUMMER-SALE-2025'))).toBe(
-      true
-    );
+    expect(appliedDiscount.promotionId.equals(new PromotionId('SUMMER-SALE-2025'))).toBe(true);
     expect(appliedDiscount.details).toBeDefined();
     expect(appliedDiscount.details).toContain('SKU-A');
     expect(appliedDiscount.allocations).toBeDefined();
@@ -217,5 +192,240 @@ describe('Promotion Engine Acceptance Tests', () => {
     expect(summary.discountTotal.amount.toFixed(2)).toBe('5.75');
     expect(summary.total.amount.toFixed(2)).toBe('39.25');
     expect(summary.appliedDiscounts).toHaveLength(2);
+  });
+
+  describe('Percent Discount on Products', () => {
+    it('should apply 10% discount to SKU_A: 2 × €10.00, 1 × €5.00 → €23.00', () => {
+      // Arrange: 2 × SKU_A at €10.00, 1 × SKU_B at €5.00
+      const cart = new Cart([
+        new LineItem(productA, new Quantity(2), Money.euros('10.00')),
+        new LineItem(productB, new Quantity(1), Money.euros('5.00')),
+      ]);
+
+      // 10% off SKU_A
+      const promotion = new PercentOffPromotion(
+        new PromotionId('PROMO-10-OFF-A'),
+        new Percentage(10),
+        new Set([new Sku('SKU-A')])
+      );
+
+      const engine = new PromotionEngine([promotion]);
+
+      // Act
+      const summary = engine.price(cart, context);
+
+      // Assert
+      // Subtotal: 2 × €10.00 + 1 × €5.00 = €25.00
+      expect(summary.subtotal.amount.toFixed(2)).toBe('25.00');
+
+      // Discount: €10.00 × 2 × 10% = €2.00
+      expect(summary.discountTotal.amount.toFixed(2)).toBe('2.00');
+
+      // Total: €25.00 - €2.00 = €23.00
+      expect(summary.total.amount.toFixed(2)).toBe('23.00');
+
+      // Verify applied discount
+      expect(summary.appliedDiscounts).toHaveLength(1);
+      const appliedDiscount = summary.appliedDiscounts[0];
+      expect(appliedDiscount.promotionId.equals(new PromotionId('PROMO-10-OFF-A'))).toBe(true);
+      expect(appliedDiscount.amount.amount.toFixed(2)).toBe('2.00');
+    });
+
+    it('should apply discount only to eligible SKUs', () => {
+      // Arrange: 1 × SKU_A at €20.00, 1 × SKU_B at €30.00
+      const cart = new Cart([
+        new LineItem(productA, new Quantity(1), Money.euros('20.00')),
+        new LineItem(productB, new Quantity(1), Money.euros('30.00')),
+      ]);
+
+      // 15% off SKU_A only
+      const promotion = new PercentOffPromotion(
+        new PromotionId('PROMO-15-OFF-A'),
+        new Percentage(15),
+        new Set([new Sku('SKU-A')])
+      );
+
+      const engine = new PromotionEngine([promotion]);
+
+      // Act
+      const summary = engine.price(cart, context);
+
+      // Assert
+      // Subtotal: €20.00 + €30.00 = €50.00
+      expect(summary.subtotal.amount.toFixed(2)).toBe('50.00');
+
+      // Discount: €20.00 × 15% = €3.00 (only on SKU_A)
+      expect(summary.discountTotal.amount.toFixed(2)).toBe('3.00');
+
+      // Total: €50.00 - €3.00 = €47.00
+      expect(summary.total.amount.toFixed(2)).toBe('47.00');
+    });
+
+    it('should apply discount to multiple eligible SKUs', () => {
+      // Arrange: 1 × SKU_A at €10.00, 1 × SKU_B at €20.00
+      const cart = new Cart([
+        new LineItem(productA, new Quantity(1), Money.euros('10.00')),
+        new LineItem(productB, new Quantity(1), Money.euros('20.00')),
+      ]);
+
+      // 10% off both SKU_A and SKU_B
+      const promotion = new PercentOffPromotion(
+        new PromotionId('PROMO-10-OFF-ALL'),
+        new Percentage(10),
+        new Set([new Sku('SKU-A'), new Sku('SKU-B')])
+      );
+
+      const engine = new PromotionEngine([promotion]);
+
+      // Act
+      const summary = engine.price(cart, context);
+
+      // Assert
+      // Subtotal: €10.00 + €20.00 = €30.00
+      expect(summary.subtotal.amount.toFixed(2)).toBe('30.00');
+
+      // Discount: (€10.00 × 10%) + (€20.00 × 10%) = €1.00 + €2.00 = €3.00
+      expect(summary.discountTotal.amount.toFixed(2)).toBe('3.00');
+
+      // Total: €30.00 - €3.00 = €27.00
+      expect(summary.total.amount.toFixed(2)).toBe('27.00');
+    });
+
+    it('should handle rounding per line correctly', () => {
+      // Arrange: 3 × SKU_A at €10.00 (total €30.00)
+      const cart = new Cart([new LineItem(productA, new Quantity(3), Money.euros('10.00'))]);
+
+      // 33.33% off (should round per line)
+      const promotion = new PercentOffPromotion(
+        new PromotionId('PROMO-33-OFF-A'),
+        new Percentage(33.33),
+        new Set([new Sku('SKU-A')])
+      );
+
+      const engine = new PromotionEngine([promotion]);
+
+      // Act
+      const summary = engine.price(cart, context);
+
+      // Assert
+      // Subtotal: 3 × €10.00 = €30.00
+      expect(summary.subtotal.amount.toFixed(2)).toBe('30.00');
+
+      // Discount: €30.00 × 33.33% = €9.999 → €10.00 (rounded HALF_UP)
+      expect(summary.discountTotal.amount.toFixed(2)).toBe('10.00');
+
+      // Total: €30.00 - €10.00 = €20.00
+      expect(summary.total.amount.toFixed(2)).toBe('20.00');
+    });
+
+    it('should provide explainability with promotion ID, percentage, and affected SKUs', () => {
+      // Arrange
+      const cart = new Cart([
+        new LineItem(productA, new Quantity(1), Money.euros('50.00')),
+        new LineItem(productB, new Quantity(1), Money.euros('30.00')),
+      ]);
+
+      const promotion = new PercentOffPromotion(
+        new PromotionId('SUMMER-SALE-2025'),
+        new Percentage(20),
+        new Set([new Sku('SKU-A')])
+      );
+
+      const engine = new PromotionEngine([promotion]);
+
+      // Act
+      const summary = engine.price(cart, context);
+
+      // Assert
+      expect(summary.appliedDiscounts).toHaveLength(1);
+      const appliedDiscount = summary.appliedDiscounts[0];
+
+      // Verify promotion ID
+      expect(appliedDiscount.promotionId.equals(new PromotionId('SUMMER-SALE-2025'))).toBe(true);
+
+      // Verify discount amount: €50.00 × 20% = €10.00
+      expect(appliedDiscount.amount.amount.toFixed(2)).toBe('10.00');
+
+      // Verify details contain readable information
+      expect(appliedDiscount.details).toBeDefined();
+      expect(appliedDiscount.details.length).toBeGreaterThan(0);
+
+      // Verify allocations show affected SKUs
+      expect(appliedDiscount.allocations).toBeDefined();
+      expect(appliedDiscount.allocations?.size).toBe(1);
+
+      const skuAAllocation = Array.from(appliedDiscount.allocations?.entries() || []).find(
+        ([sku]) => sku.value === 'SKU-A'
+      );
+      expect(skuAAllocation).toBeDefined();
+      expect(skuAAllocation?.[1].amount.toFixed(2)).toBe('10.00');
+    });
+
+    it('should not apply discount when no eligible SKUs are in cart', () => {
+      // Arrange: Only SKU_B in cart
+      const cart = new Cart([new LineItem(productB, new Quantity(1), Money.euros('25.00'))]);
+
+      // Promotion for SKU_A only
+      const promotion = new PercentOffPromotion(
+        new PromotionId('PROMO-10-OFF-A'),
+        new Percentage(10),
+        new Set([new Sku('SKU-A')])
+      );
+
+      const engine = new PromotionEngine([promotion]);
+
+      // Act
+      const summary = engine.price(cart, context);
+
+      // Assert
+      expect(summary.subtotal.amount.toFixed(2)).toBe('25.00');
+      expect(summary.discountTotal.amount.toFixed(2)).toBe('0.00');
+      expect(summary.total.amount.toFixed(2)).toBe('25.00');
+      expect(summary.appliedDiscounts).toHaveLength(0);
+    });
+
+    it('should apply 0% discount (edge case)', () => {
+      // Arrange
+      const cart = new Cart([new LineItem(productA, new Quantity(1), Money.euros('100.00'))]);
+
+      // 0% off
+      const promotion = new PercentOffPromotion(
+        new PromotionId('PROMO-0-OFF'),
+        new Percentage(0),
+        new Set([new Sku('SKU-A')])
+      );
+
+      const engine = new PromotionEngine([promotion]);
+
+      // Act
+      const summary = engine.price(cart, context);
+
+      // Assert
+      expect(summary.subtotal.amount.toFixed(2)).toBe('100.00');
+      expect(summary.discountTotal.amount.toFixed(2)).toBe('0.00');
+      expect(summary.total.amount.toFixed(2)).toBe('100.00');
+    });
+
+    it('should apply 100% discount (edge case)', () => {
+      // Arrange
+      const cart = new Cart([new LineItem(productA, new Quantity(1), Money.euros('100.00'))]);
+
+      // 100% off
+      const promotion = new PercentOffPromotion(
+        new PromotionId('PROMO-100-OFF'),
+        new Percentage(100),
+        new Set([new Sku('SKU-A')])
+      );
+
+      const engine = new PromotionEngine([promotion]);
+
+      // Act
+      const summary = engine.price(cart, context);
+
+      // Assert
+      expect(summary.subtotal.amount.toFixed(2)).toBe('100.00');
+      expect(summary.discountTotal.amount.toFixed(2)).toBe('100.00');
+      expect(summary.total.amount.toFixed(2)).toBe('0.00');
+    });
   });
 });
